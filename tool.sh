@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 简化版 Linux 定时任务管理脚本（基于 crontab）
-# 功能：查看 / 添加 / 删除 当前用户的定时任务
-# 自动检测并安装 cron 相关依赖（尽力支持常见发行版）
+# Linux 定时任务管理工具（简化版）
+# 功能：添加 / 查看 / 删除 / 暂停 / 恢复 / 今日执行情况
+# 自动检测并安装 cron 相关依赖（尽量支持常见发行版）
 
 # ====== 外观相关 ======
 RED="\033[31m"
@@ -22,11 +22,13 @@ pause() {
     read -rp "按回车键继续..." _
 }
 
+LOG_FILE="${HOME}/.cron_easy.log"
+RUNNER_SCRIPT="${HOME}/.cron_easy_run.sh"
+
 # ====== 依赖检测 & 安装 ======
 
 run_with_sudo_if_needed() {
     if [[ $EUID -eq 0 ]]; then
-        # 已经是 root
         bash -c "$*"
     else
         if command -v sudo >/dev/null 2>&1; then
@@ -46,7 +48,6 @@ install_cron_if_needed() {
 
     echo -e "${YELLOW}⚠ 未检测到 crontab 命令，尝试自动安装 cron 相关组件...${RESET}"
 
-    # 判断包管理器
     if command -v apt-get >/dev/null 2>&1; then
         echo -e "${BLUE}➜ 检测到 apt-get，尝试安装 cron...${RESET}"
         run_with_sudo_if_needed "apt-get update -y && apt-get install -y cron"
@@ -75,7 +76,6 @@ install_cron_if_needed() {
 
     echo -e "${GREEN}✔ crontab 安装成功。${RESET}"
 
-    # 尝试启动 cron 服务（尽力而为，不强制要求成功）
     if command -v systemctl >/dev/null 2>&1; then
         for svc in cron crond cronie; do
             if systemctl list-unit-files | grep -q "^${svc}.service"; then
@@ -106,7 +106,6 @@ read_int_in_range() {
 
     while true; do
         read -rp "$prompt" value
-        # 允许直接回车返回空
         if [[ -z "$value" ]]; then
             echo ""
             return 0
@@ -124,6 +123,29 @@ read_int_in_range() {
     done
 }
 
+ensure_runner_script() {
+    if [[ -f "$RUNNER_SCRIPT" ]]; then
+        return 0
+    fi
+
+    cat > "$RUNNER_SCRIPT" << 'EOF'
+#!/usr/bin/env bash
+LOG_FILE="${HOME}/.cron_easy.log"
+ts="$(date '+%F %T')"
+cmd="$*"
+/bin/bash -c "$cmd"
+exit_code=$?
+status="FAIL"
+if [[ $exit_code -eq 0 ]]; then
+    status="OK"
+fi
+echo "$ts | $status | exit=$exit_code | cmd=$cmd" >> "$LOG_FILE"
+exit $exit_code
+EOF
+
+    chmod +x "$RUNNER_SCRIPT"
+}
+
 # ====== 查看定时任务 ======
 list_cron() {
     show_header
@@ -135,7 +157,6 @@ list_cron() {
         if [[ ! -s "$tmpfile" ]]; then
             echo -e "${YELLOW}（当前没有任何定时任务）${RESET}"
         else
-            # 带行号显示
             nl -ba "$tmpfile" | sed "s/^/┃ /"
         fi
     else
@@ -168,23 +189,18 @@ add_cron() {
         1)
             echo
             echo -e "${MAGENTA}▶ 每小时执行${RESET}"
-            minute=$(read_int_in_range "请输入分钟 (0-59)，如 5： " 0 59)
-            if [[ -z "$minute" ]]; then
-                echo -e "${RED}✖ 不能为空。${RESET}"
-                pause
-                return
-            fi
+            minute=$(read_int_in_range "请输入分钟 (0-59)： " 0 59)
+            [[ -z "$minute" ]] && echo -e "${RED}✖ 不能为空。${RESET}" && pause && return
             schedule="${minute} * * * *"
             ;;
         2)
             echo
             echo -e "${MAGENTA}▶ 每天执行${RESET}"
-            hour=$(read_int_in_range "请输入小时 (0-23)，如 2： " 0 23)
-            minute=$(read_int_in_range "请输入分钟 (0-59)，如 30： " 0 59)
+            hour=$(read_int_in_range "请输入小时 (0-23)： " 0 23)
+            minute=$(read_int_in_range "请输入分钟 (0-59)： " 0 59)
             if [[ -z "$hour" || -z "$minute" ]]; then
                 echo -e "${RED}✖ 时和分不能为空。${RESET}"
-                pause
-                return
+                pause; return
             fi
             schedule="${minute} ${hour} * * *"
             ;;
@@ -197,8 +213,7 @@ add_cron() {
             minute=$(read_int_in_range "请输入分钟 (0-59)： " 0 59)
             if [[ -z "$week" || -z "$hour" || -z "$minute" ]]; then
                 echo -e "${RED}✖ 星期、时、分不能为空。${RESET}"
-                pause
-                return
+                pause; return
             fi
             schedule="${minute} ${hour} * * ${week}"
             ;;
@@ -210,8 +225,7 @@ add_cron() {
             minute=$(read_int_in_range "请输入分钟 (0-59)： " 0 59)
             if [[ -z "$day" || -z "$hour" || -z "$minute" ]]; then
                 echo -e "${RED}✖ 日、时、分不能为空。${RESET}"
-                pause
-                return
+                pause; return
             fi
             schedule="${minute} ${hour} ${day} * *"
             ;;
@@ -224,50 +238,74 @@ add_cron() {
             minute=$(read_int_in_range "请输入分钟 (0-59)： " 0 59)
             if [[ -z "$month" || -z "$day" || -z "$hour" || -z "$minute" ]]; then
                 echo -e "${RED}✖ 月、日、时、分不能为空。${RESET}"
-                pause
-                return
+                pause; return
             fi
             schedule="${minute} ${hour} ${day} ${month} *"
             ;;
         6)
             echo
             echo -e "${MAGENTA}▶ 自定义 cron 表达式${RESET}"
-            echo -e "格式：${YELLOW}分 时 日 月 周${RESET}，例如：${YELLOW}0 2 * * *${RESET}"
+            echo -e "格式：${YELLOW}分 时 日 月 周${RESET}，例如：${YELLOW}0 3 * * *${RESET}"
             read -rp "请输入完整 cron 表达式： " schedule
             schedule="$(echo "$schedule" | sed 's/^[ \t]*//;s/[ \t]*$//')"
-            if [[ -z "$schedule" ]]; then
-                echo -e "${RED}✖ 表达式不能为空。${RESET}"
-                pause
-                return
-            fi
+            [[ -z "$schedule" ]] && echo -e "${RED}✖ 表达式不能为空。${RESET}" && pause && return
             ;;
         *)
             echo -e "${RED}✖ 无效选项。${RESET}"
-            pause
-            return
+            pause; return
             ;;
     esac
 
     echo
-    echo -e "${CYAN}📝 将使用时间表达式：${YELLOW}${schedule}${RESET}"
+    echo -e "${CYAN}🕒 时间表达式：${YELLOW}${schedule}${RESET}"
     read -rp "请输入要执行的命令（尽量写绝对路径）： " cmd
     cmd="$(echo "$cmd" | sed 's/^[ \t]*//;s/[ \t]*$//')"
-    if [[ -z "$cmd" ]]; then
-        echo -e "${RED}✖ 命令不能为空。${RESET}"
-        pause
-        return
+    [[ -z "$cmd" ]] && echo -e "${RED}✖ 命令不能为空。${RESET}" && pause && return
+
+    echo
+    echo -e "${BOLD}请选择输出处理方式：${RESET}"
+    echo -e "  ${CYAN}1${RESET}) 保留输出（不处理）"
+    echo -e "  ${CYAN}2${RESET}) 丢弃所有输出（>/dev/null 2>&1）"
+    echo -e "  ${CYAN}3${RESET}) 写入指定日志文件（>> file 2>&1）"
+    echo
+    read -rp "请输入选项编号： " out_mode
+
+    local cmd_final log_path
+
+    case "$out_mode" in
+        1|"")
+            cmd_final="${cmd}"
+            ;;
+        2)
+            cmd_final="${cmd} >/dev/null 2>&1"
+            ;;
+        3)
+            read -rp "请输入日志文件路径（例如 /var/log/myjob.log）： " log_path
+            log_path="$(echo "$log_path" | sed 's/^[ \t]*//;s/[ \t]*$//')"
+            [[ -z "$log_path" ]] && echo -e "${RED}✖ 日志文件路径不能为空。${RESET}" && pause && return
+            cmd_final="${cmd} >>${log_path} 2>&1"
+            ;;
+        *)
+            echo -e "${YELLOW}未知选项，默认保留输出。${RESET}"
+            cmd_final="${cmd}"
+            ;;
+    esac
+
+    echo
+    echo -e "${BOLD}是否启用执行日志（用于“今日执行情况”）？${RESET}"
+    echo -e "  ${CYAN}y${RESET}) 是，记录到 ${YELLOW}${LOG_FILE}${RESET}"
+    echo -e "  其他） 否，不记录"
+    read -rp "选择 (y/N): " log_choice
+
+    if [[ "$log_choice" == "y" || "$log_choice" == "Y" ]]; then
+        ensure_runner_script
+        cmd_final="${RUNNER_SCRIPT} ${cmd_final}"
     fi
 
-    new_line="${schedule} ${cmd}"
+    new_line="${schedule} ${cmd_final}"
 
-    # 追加到当前 crontab
     tmpfile="$(mktemp)"
-    if crontab -l 2>/dev/null >"$tmpfile"; then
-        :
-    else
-        : >"$tmpfile"
-    fi
-
+    if crontab -l 2>/dev/null >"$tmpfile"; then :; else : >"$tmpfile"; fi
     echo "$new_line" >>"$tmpfile"
     crontab "$tmpfile"
     rm -f "$tmpfile"
@@ -276,6 +314,9 @@ add_cron() {
     divider
     echo -e "${GREEN}✔ 定时任务添加成功：${RESET}"
     echo -e "  ${BOLD}${new_line}${RESET}"
+    if [[ "$log_choice" == "y" || "$log_choice" == "Y" ]]; then
+        echo -e "  🔎 已开启执行日志，稍后可在菜单 [6] 查看今日执行情况"
+    fi
     divider
     pause
 }
@@ -289,16 +330,12 @@ delete_cron() {
     tmpfile="$(mktemp)"
     if ! crontab -l 2>/dev/null | sed '/^\s*$/d' >"$tmpfile"; then
         echo -e "${YELLOW}当前没有任何定时任务。${RESET}"
-        rm -f "$tmpfile"
-        pause
-        return
+        rm -f "$tmpfile"; pause; return
     fi
 
     if [[ ! -s "$tmpfile" ]]; then
         echo -e "${YELLOW}当前没有任何定时任务。${RESET}"
-        rm -f "$tmpfile"
-        pause
-        return
+        rm -f "$tmpfile"; pause; return
     fi
 
     echo -e "${CYAN}当前任务列表：${RESET}"
@@ -309,16 +346,12 @@ delete_cron() {
 
     if [[ -z "$line_nums" ]]; then
         echo "已取消删除。"
-        rm -f "$tmpfile"
-        pause
-        return
+        rm -f "$tmpfile"; pause; return
     fi
 
     if ! echo "$line_nums" | grep -Eq '^[0-9 ]+$'; then
         echo -e "${RED}✖ 输入格式错误，只能是数字和空格。${RESET}"
-        rm -f "$tmpfile"
-        pause
-        return
+        rm -f "$tmpfile"; pause; return
     fi
 
     sed_cmd=()
@@ -346,6 +379,165 @@ delete_cron() {
     pause
 }
 
+# ====== 暂停定时任务 ======
+pause_cron() {
+    show_header
+    echo -e "${BOLD}${GREEN}⏸ 暂停定时任务${RESET}"
+    divider
+
+    tmpfile="$(mktemp)"
+    if ! crontab -l 2>/dev/null >"$tmpfile"; then
+        echo -e "${YELLOW}当前没有任何定时任务。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    if [[ ! -s "$tmpfile" ]]; then
+        echo -e "${YELLOW}当前没有任何定时任务。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    echo -e "${CYAN}当前任务（含已暂停）：${RESET}"
+    nl -ba "$tmpfile" | sed "s/^/┃ /"
+    divider
+    echo -e "请输入要暂停的行号（多个用空格隔开），直接回车取消："
+    read -rp "行号： " line_nums
+
+    if [[ -z "$line_nums" ]]; then
+        echo "已取消暂停。"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    if ! echo "$line_nums" | grep -Eq '^[0-9 ]+$'; then
+        echo -e "${RED}✖ 输入格式错误，只能是数字和空格。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    sed_cmd=()
+    for n in $line_nums; do
+        sed_cmd+=("-e" "${n}s/^/# [PAUSED] /")
+    done
+
+    tmpfile_new="$(mktemp)"
+    if sed "${sed_cmd[@]}" "$tmpfile" >"$tmpfile_new"; then
+        crontab "$tmpfile_new"
+        echo
+        echo -e "${GREEN}✔ 暂停完成，当前 crontab：${RESET}"
+        divider
+        nl -ba "$tmpfile_new" | sed "s/^/┃ /"
+        divider
+    else
+        echo -e "${RED}✖ 暂停时出错，crontab 未修改。${RESET}"
+    fi
+
+    rm -f "$tmpfile" "$tmpfile_new"
+    pause
+}
+
+# ====== 恢复定时任务 ======
+resume_cron() {
+    show_header
+    echo -e "${BOLD}${GREEN}▶ 恢复定时任务${RESET}"
+    divider
+
+    tmpfile="$(mktemp)"
+    if ! crontab -l 2>/dev/null >"$tmpfile"; then
+        echo -e "${YELLOW}当前没有任何定时任务。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    if [[ ! -s "$tmpfile" ]]; then
+        echo -e "${YELLOW}当前没有任何定时任务。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    if ! grep -q "\[PAUSED\]" "$tmpfile"; then
+        echo -e "${YELLOW}当前没有被标记为 [PAUSED] 的任务。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    echo -e "${CYAN}已暂停任务列表：${RESET}"
+    nl -ba "$tmpfile" | grep "\[PAUSED\]" | sed "s/^/┃ /"
+    divider
+    echo -e "请输入要恢复的行号（多个用空格隔开），直接回车取消："
+    read -rp "行号： " line_nums
+
+    if [[ -z "$line_nums" ]]; then
+        echo "已取消恢复。"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    if ! echo "$line_nums" | grep -Eq '^[0-9 ]+$'; then
+        echo -e "${RED}✖ 输入格式错误，只能是数字和空格。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    sed_cmd=()
+    for n in $line_nums; do
+        sed_cmd+=("-e" "${n}s/^[[:space:]]*#\s*\[PAUSED\]\s*//")
+    done
+
+    tmpfile_new="$(mktemp)"
+    if sed "${sed_cmd[@]}" "$tmpfile" >"$tmpfile_new"; then
+        crontab "$tmpfile_new"
+        echo
+        echo -e "${GREEN}✔ 恢复完成，当前 crontab：${RESET}"
+        divider
+        nl -ba "$tmpfile_new" | sed "s/^/┃ /"
+        divider
+    else
+        echo -e "${RED}✖ 恢复时出错，crontab 未修改。${RESET}"
+    fi
+
+    rm -f "$tmpfile" "$tmpfile_new"
+    pause
+}
+
+# ====== 今日执行情况（按日志显示成功/失败） ======
+show_today_status() {
+    show_header
+    echo -e "${BOLD}${GREEN}⚡ 今日定时任务执行情况${RESET}"
+    divider
+
+    if [[ ! -f "$LOG_FILE" ]]; then
+        echo -e "${YELLOW}当前没有日志文件：${LOG_FILE}${RESET}"
+        echo -e "只有通过本工具添加，并选择“启用执行日志”的任务才会记录。"
+        divider
+        pause
+        return
+    fi
+
+    today="$(date +%F)"   # YYYY-MM-DD
+    today_log="$(mktemp)"
+    grep "^${today} " "$LOG_FILE" > "$today_log" 2>/dev/null || true
+
+    if [[ ! -s "$today_log" ]]; then
+        echo -e "${YELLOW}今日暂无任何执行记录（${today}）。${RESET}"
+        rm -f "$today_log"
+        divider
+        pause
+        return
+    fi
+
+    echo -e "${CYAN}日志文件：${LOG_FILE}${RESET}"
+    echo -e "${CYAN}日期：${today}${RESET}"
+    divider
+
+    # 每行格式：YYYY-MM-DD HH:MM:SS | STATUS | exit=CODE | cmd=...
+    # 用符号标成功/失败
+    while IFS= read -r line; do
+        status_field="$(echo "$line" | awk -F'|' '{gsub(/^ *| *$/,"",$2); print $2}')"
+        if [[ "$status_field" == "OK" ]]; then
+            printf "%b✅ %s%b\n" "$GREEN" "$line" "$RESET"
+        else
+            printf "%b❌ %s%b\n" "$RED" "$line" "$RESET"
+        fi
+    done < "$today_log"
+
+    rm -f "$today_log"
+    divider
+    pause
+}
+
 # ====== 主菜单 ======
 main_menu() {
     install_cron_if_needed
@@ -354,18 +546,24 @@ main_menu() {
         show_header
         echo -e "${BOLD}请选择操作：${RESET}"
         echo
-        echo -e "  ${CYAN}1${RESET}) 📋 查看当前定时任务"
-        echo -e "  ${CYAN}2${RESET}) ➕ 添加定时任务"
+        echo -e "  ${CYAN}1${RESET}) ➕ 添加定时任务"
+        echo -e "  ${CYAN}2${RESET}) 📋 查看当前定时任务"
         echo -e "  ${CYAN}3${RESET}) 🗑 删除定时任务"
+        echo -e "  ${CYAN}4${RESET}) ⏸ 暂停定时任务"
+        echo -e "  ${CYAN}5${RESET}) ▶ 恢复定时任务"
+        echo -e "  ${CYAN}6${RESET}) ⚡ 今日执行情况"
         echo -e "  ${CYAN}0${RESET}) 🚪 退出"
         echo
         divider
         read -rp "请输入选项编号： " choice
 
         case "$choice" in
-            1) list_cron ;;
-            2) add_cron ;;
+            1) add_cron ;;
+            2) list_cron ;;
             3) delete_cron ;;
+            4) pause_cron ;;
+            5) resume_cron ;;
+            6) show_today_status ;;
             0)
                 echo
                 echo -e "${GREEN}✔ 已退出，再见。${RESET}"
