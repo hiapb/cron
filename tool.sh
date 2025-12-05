@@ -277,9 +277,9 @@ add_cron() {
 
     echo
     echo -e "${BOLD}请选择输出处理方式：${RESET}"
-    echo -e "  ${CYAN}1${RESET}) 保留输出（不处理）"
-    echo -e "  ${CYAN}2${RESET}) 丢弃所有输出（>/dev/null 2>&1）"
-    echo -e "  ${CYAN}3${RESET}) 写入指定日志文件（>> file 2>&1）"
+    echo -e "  ${CYAN}1${RESET}) 保留输出"
+    echo -e "  ${CYAN}2${RESET}) 丢弃所有输出"
+    echo -e "  ${CYAN}3${RESET}) 写入指定日志文件"
     echo
     read -rp "请输入选项编号： " out_mode
 
