@@ -90,7 +90,7 @@ install_cron_if_needed() {
 show_header() {
     clear
     divider
-    printf "%b┃%b %-43s %b┃%b\n" "$CYAN" "$RESET" "Linux 定时任务管理工具（简化版）" "$CYAN" "$RESET"
+    printf "%b┃%b %-43s %b┃%b\n" "$CYAN" "$RESET" "Linux 定时任务管理工具" "$CYAN" "$RESET"
     divider
     echo -e "当前用户：${YELLOW}$(whoami)${RESET}"
     echo
