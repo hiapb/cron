@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Linux 定时任务管理工具（简化版）
-# 功能：添加 / 查看 / 删除 / 暂停 / 恢复 / 今日执行情况
-# 自动检测并安装 cron 相关依赖（尽量支持常见发行版）
+# 功能：添加 / 查看 / 删除 / 暂停 / 恢复 / 今日执行情况 / 立即执行
+# 自动检测并安装 cron 相关依赖（尽力支持常见发行版）
 
 # ====== 外观相关 ======
 RED="\033[31m"
@@ -254,7 +254,7 @@ add_cron() {
             echo -e "${RED}✖ 无效选项。${RESET}"
             pause; return
             ;;
-    esac
+    esac()
 
     echo
     echo -e "${CYAN}🕒 时间表达式：${YELLOW}${schedule}${RESET}"
@@ -522,8 +522,6 @@ show_today_status() {
     echo -e "${CYAN}日期：${today}${RESET}"
     divider
 
-    # 每行格式：YYYY-MM-DD HH:MM:SS | STATUS | exit=CODE | cmd=...
-    # 用符号标成功/失败
     while IFS= read -r line; do
         status_field="$(echo "$line" | awk -F'|' '{gsub(/^ *| *$/,"",$2); print $2}')"
         if [[ "$status_field" == "OK" ]]; then
@@ -535,6 +533,78 @@ show_today_status() {
 
     rm -f "$today_log"
     divider
+    pause
+}
+
+# ====== 立即执行某条任务（手动测试） ======
+run_task_once() {
+    show_header
+    echo -e "${BOLD}${GREEN}🚀 立即执行某条定时任务（手动测试）${RESET}"
+    divider
+
+    tmpfile="$(mktemp)"
+    # 只取非空、非注释行（不包括暂停任务）
+    crontab -l 2>/dev/null | sed '/^\s*$/d;/^\s*#/d' >"$tmpfile" 2>/dev/null || true
+
+    if [[ ! -s "$tmpfile" ]]; then
+        echo -e "${YELLOW}当前没有可执行的定时任务。${RESET}"
+        rm -f "$tmpfile"
+        divider
+        pause
+        return
+    fi
+
+    echo -e "${CYAN}当前可执行任务列表：${RESET}"
+    nl -ba "$tmpfile" | sed "s/^/┃ /"
+    divider
+    read -rp "请输入要立即执行的行号（单个数字），直接回车取消： " n
+
+    if [[ -z "$n" ]]; then
+        echo "已取消执行。"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    if ! [[ "$n" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}✖ 请输入数字行号。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    chosen_line="$(sed -n "${n}p" "$tmpfile" 2>/dev/null || true)"
+    if [[ -z "$chosen_line" ]]; then
+        echo -e "${RED}✖ 行号不存在。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    # 命令部分：第 6 列及之后
+    cmd_to_run="$(echo "$chosen_line" | awk '{for(i=6;i<=NF;i++){printf $i; if(i<NF)printf " "}}')"
+
+    if [[ -z "$cmd_to_run" ]]; then
+        echo -e "${RED}✖ 无法解析该行命令部分。${RESET}"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    echo
+    echo -e "选中任务：${YELLOW}${chosen_line}${RESET}"
+    echo -e "即将执行命令：${CYAN}${cmd_to_run}${RESET}"
+    read -rp "确认立即执行？(y/N): " confirm
+    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+        echo "已取消执行。"
+        rm -f "$tmpfile"; pause; return
+    fi
+
+    echo
+    echo -e "${BLUE}▶ 开始执行...${RESET}"
+    bash -c "$cmd_to_run"
+    exit_code=$?
+
+    echo
+    if [[ $exit_code -eq 0 ]]; then
+        echo -e "${GREEN}✔ 执行成功（退出码：0）${RESET}"
+    else
+        echo -e "${RED}❌ 执行失败（退出码：${exit_code}）${RESET}"
+    fi
+    divider
+    rm -f "$tmpfile"
     pause
 }
 
@@ -552,6 +622,7 @@ main_menu() {
         echo -e "  ${CYAN}4${RESET}) ⏸ 暂停定时任务"
         echo -e "  ${CYAN}5${RESET}) ▶ 恢复定时任务"
         echo -e "  ${CYAN}6${RESET}) ⚡ 今日执行情况"
+        echo -e "  ${CYAN}7${RESET}) 🚀 立即执行某条任务"
         echo -e "  ${CYAN}0${RESET}) 🚪 退出"
         echo
         divider
@@ -564,6 +635,7 @@ main_menu() {
             4) pause_cron ;;
             5) resume_cron ;;
             6) show_today_status ;;
+            7) run_task_once ;;
             0)
                 echo
                 echo -e "${GREEN}✔ 已退出，再见。${RESET}"
