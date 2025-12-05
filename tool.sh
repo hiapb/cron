@@ -589,7 +589,7 @@ run_task_once() {
     echo
     echo -e "${BOLD}请选择执行模式：${RESET}"
     echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行"
-    echo -e "  ${CYAN}2${RESET}) 交互执行"
+    echo -e "  ${CYAN}2${RESET}) 普通执行"
     read -rp "选择执行模式 [默认 1]： " exec_mode
     [[ -z "$exec_mode" ]] && exec_mode=1
 
@@ -610,7 +610,7 @@ run_task_once() {
         cmd_for_exec="$(echo "$cmd_for_exec" | sed 's/[[:space:]]*$//')"
 
         echo
-        echo -e "交互模式实际执行命令：${GREEN}${cmd_for_exec}${RESET}"
+        echo -e "普通模式实际执行命令：${GREEN}${cmd_for_exec}${RESET}"
     fi
 
     echo
