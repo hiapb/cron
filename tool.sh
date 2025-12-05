@@ -557,7 +557,7 @@ run_task_once() {
     echo -e "${CYAN}当前可执行任务列表：${RESET}"
     nl -ba "$tmpfile" | sed "s/^/┃ /"
     divider
-    read -rp "请输入要立即执行的行号，直接回车取消： " n
+    read -rp "请输入要立即执行的行号（单个数字），直接回车取消： " n
 
     if [[ -z "$n" ]]; then
         echo "已取消执行。"
@@ -585,15 +585,35 @@ run_task_once() {
 
     echo
     echo -e "选中任务：${YELLOW}${chosen_line}${RESET}"
-    echo -e "即将执行命令：${CYAN}${cmd_to_run}${RESET}"
+    echo -e "原始命令：${CYAN}${cmd_to_run}${RESET}"
     echo
     echo -e "${BOLD}请选择执行模式：${RESET}"
     echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行"
-    echo -e "  ${CYAN}2${RESET}) 普通执行"
+    echo -e "  ${CYAN}2${RESET}) 交互执行"
     read -rp "选择执行模式 [默认 1]： " exec_mode
-
     [[ -z "$exec_mode" ]] && exec_mode=1
 
+    cmd_for_exec="$cmd_to_run"
+
+    if [[ "$exec_mode" -eq 2 ]]; then
+        # 去掉一些常见的尾部重定向，以便你能看到提示
+        # 1) xxx >/dev/null 2>&1
+        cmd_for_exec="${cmd_for_exec% >/dev/null 2>&1}"
+        # 2) xxx 2>&1 >/dev/null
+        cmd_for_exec="${cmd_for_exec% 2>&1 >/dev/null}"
+        # 3) xxx >>something 2>&1
+        if [[ "$cmd_for_exec" =~ \ >>[^[:space:]]+\ 2\>\&1$ ]]; then
+            cmd_for_exec="${cmd_for_exec% 2>&1}"
+            cmd_for_exec="${cmd_for_exec%% >>*}"
+        fi
+        # 4) 再次去掉末尾多余空格
+        cmd_for_exec="$(echo "$cmd_for_exec" | sed 's/[[:space:]]*$//')"
+
+        echo
+        echo -e "交互模式实际执行命令：${GREEN}${cmd_for_exec}${RESET}"
+    fi
+
+    echo
     read -rp "确认立即执行？(y/N): " confirm
     if [[ ! "$confirm" =~ ^[yY]$ ]]; then
         echo "已取消执行。"
@@ -604,11 +624,11 @@ run_task_once() {
     echo -e "${BLUE}▶ 开始执行...${RESET}"
 
     if [[ "$exec_mode" -eq 2 ]]; then
-        # 普通执行：允许交互
-        bash -c "$cmd_to_run"
+        # 交互执行：保持 stdin 为当前终端
+        bash -c "$cmd_for_exec"
     else
-        # 模拟 cron：无交互，把 stdin 丢到 /dev/null
-        bash -c "$cmd_to_run" </dev/null
+        # 模拟 cron：stdin=/dev/null
+        bash -c "$cmd_for_exec" </dev/null
     fi
 
     exit_code=$?
