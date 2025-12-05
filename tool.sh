@@ -157,7 +157,19 @@ list_cron() {
         if [[ ! -s "$tmpfile" ]]; then
             echo -e "${YELLOW}（当前没有任何定时任务）${RESET}"
         else
-            nl -ba "$tmpfile" | sed "s/^/┃ /"
+            # 带行号输出，并对已暂停任务做标记
+            while IFS=$'\t' read -r lineno rest; do
+                # nl -ba 的输出格式：<行号>\t<内容>
+                [[ -z "$lineno" ]] && continue
+                if [[ "$rest" == *"[PAUSED]"* ]]; then
+                    # 已暂停任务，高亮并加 “已暂停” 标记
+                    printf "┃ %s %b%s%b %b⏸(已暂停)%b\n" \
+                        "$lineno" "$YELLOW" "$rest" "$RESET" "$MAGENTA" "$RESET"
+                else
+                    # 普通任务
+                    printf "┃ %s %s\n" "$lineno" "$rest"
+                fi
+            done < <(nl -ba "$tmpfile")
         fi
     else
         echo -e "${YELLOW}（当前没有任何定时任务）${RESET}"
@@ -166,6 +178,7 @@ list_cron() {
     divider
     pause
 }
+
 
 # ====== 添加定时任务 ======
 add_cron() {
