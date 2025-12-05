@@ -254,7 +254,7 @@ add_cron() {
             echo -e "${RED}✖ 无效选项。${RESET}"
             pause; return
             ;;
-    esac()
+    esac
 
     echo
     echo -e "${CYAN}🕒 时间表达式：${YELLOW}${schedule}${RESET}"
