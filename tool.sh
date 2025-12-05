@@ -539,7 +539,7 @@ show_today_status() {
 # ====== 立即执行某条任务（手动测试） ======
 run_task_once() {
     show_header
-    echo -e "${BOLD}${GREEN}🚀 立即执行某条定时任务（手动测试）${RESET}"
+    echo -e "${BOLD}${GREEN}🚀 立即执行某条定时任务${RESET}"
     divider
 
     tmpfile="$(mktemp)"
@@ -557,7 +557,7 @@ run_task_once() {
     echo -e "${CYAN}当前可执行任务列表：${RESET}"
     nl -ba "$tmpfile" | sed "s/^/┃ /"
     divider
-    read -rp "请输入要立即执行的行号（单个数字），直接回车取消： " n
+    read -rp "请输入要立即执行的行号，直接回车取消： " n
 
     if [[ -z "$n" ]]; then
         echo "已取消执行。"
@@ -588,8 +588,8 @@ run_task_once() {
     echo -e "即将执行命令：${CYAN}${cmd_to_run}${RESET}"
     echo
     echo -e "${BOLD}请选择执行模式：${RESET}"
-    echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行（非交互，stdin=/dev/null）"
-    echo -e "  ${CYAN}2${RESET}) 普通执行（当前终端，可交互）"
+    echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行"
+    echo -e "  ${CYAN}2${RESET}) 普通执行"
     read -rp "选择执行模式 [默认 1]： " exec_mode
 
     [[ -z "$exec_mode" ]] && exec_mode=1
