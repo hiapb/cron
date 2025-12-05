@@ -586,6 +586,14 @@ run_task_once() {
     echo
     echo -e "选中任务：${YELLOW}${chosen_line}${RESET}"
     echo -e "即将执行命令：${CYAN}${cmd_to_run}${RESET}"
+    echo
+    echo -e "${BOLD}请选择执行模式：${RESET}"
+    echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行（非交互，stdin=/dev/null）"
+    echo -e "  ${CYAN}2${RESET}) 普通执行（当前终端，可交互）"
+    read -rp "选择执行模式 [默认 1]： " exec_mode
+
+    [[ -z "$exec_mode" ]] && exec_mode=1
+
     read -rp "确认立即执行？(y/N): " confirm
     if [[ ! "$confirm" =~ ^[yY]$ ]]; then
         echo "已取消执行。"
@@ -594,7 +602,15 @@ run_task_once() {
 
     echo
     echo -e "${BLUE}▶ 开始执行...${RESET}"
-    bash -c "$cmd_to_run"
+
+    if [[ "$exec_mode" -eq 2 ]]; then
+        # 普通执行：允许交互
+        bash -c "$cmd_to_run"
+    else
+        # 模拟 cron：无交互，把 stdin 丢到 /dev/null
+        bash -c "$cmd_to_run" </dev/null
+    fi
+
     exit_code=$?
 
     echo
@@ -602,11 +618,15 @@ run_task_once() {
         echo -e "${GREEN}✔ 执行成功（退出码：0）${RESET}"
     else
         echo -e "${RED}❌ 执行失败（退出码：${exit_code}）${RESET}"
+        if [[ "$exec_mode" -eq 1 ]]; then
+            echo -e "${YELLOW}提示：这是按 cron 的“非交互”方式执行的，如果脚本需要输入，很可能会失败。${RESET}"
+        fi
     fi
     divider
     rm -f "$tmpfile"
     pause
 }
+
 
 # ====== 主菜单 ======
 main_menu() {
