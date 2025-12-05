@@ -557,7 +557,7 @@ run_task_once() {
     echo -e "${CYAN}当前可执行任务列表：${RESET}"
     nl -ba "$tmpfile" | sed "s/^/┃ /"
     divider
-    read -rp "请输入要立即执行的行号（单个数字），直接回车取消： " n
+    read -rp "请输入要立即执行的行号，直接回车取消： " n
 
     if [[ -z "$n" ]]; then
         echo "已取消执行。"
@@ -589,24 +589,19 @@ run_task_once() {
     echo
     echo -e "${BOLD}请选择执行模式：${RESET}"
     echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行"
-    echo -e "  ${CYAN}2${RESET}) 普通执行"
+    echo -e "  ${CYAN}2${RESET}) 普通执行）"
     read -rp "选择执行模式 [默认 1]： " exec_mode
     [[ -z "$exec_mode" ]] && exec_mode=1
 
     cmd_for_exec="$cmd_to_run"
 
     if [[ "$exec_mode" -eq 2 ]]; then
-        # 去掉一些常见的尾部重定向，以便你能看到提示
+        # 去掉常见的尾部重定向，让交互提示能显示出来
         # 1) xxx >/dev/null 2>&1
         cmd_for_exec="${cmd_for_exec% >/dev/null 2>&1}"
         # 2) xxx 2>&1 >/dev/null
         cmd_for_exec="${cmd_for_exec% 2>&1 >/dev/null}"
-        # 3) xxx >>something 2>&1
-        if [[ "$cmd_for_exec" =~ \ >>[^[:space:]]+\ 2\>\&1$ ]]; then
-            cmd_for_exec="${cmd_for_exec% 2>&1}"
-            cmd_for_exec="${cmd_for_exec%% >>*}"
-        fi
-        # 4) 再次去掉末尾多余空格
+        # 去掉结尾多余空格
         cmd_for_exec="$(echo "$cmd_for_exec" | sed 's/[[:space:]]*$//')"
 
         echo
@@ -639,13 +634,14 @@ run_task_once() {
     else
         echo -e "${RED}❌ 执行失败（退出码：${exit_code}）${RESET}"
         if [[ "$exec_mode" -eq 1 ]]; then
-            echo -e "${YELLOW}提示：这是按 cron 的“非交互”方式执行的，如果脚本需要输入，很可能会失败。${RESET}"
+            echo -e "${YELLOW}提示：这是按 cron 的“非交互”方式执行的，如果脚本需要输入，很可能会卡住或失败。${RESET}"
         fi
     fi
     divider
     rm -f "$tmpfile"
     pause
 }
+
 
 
 # ====== 主菜单 ======
