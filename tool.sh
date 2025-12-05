@@ -589,7 +589,7 @@ run_task_once() {
     echo
     echo -e "${BOLD}请选择执行模式：${RESET}"
     echo -e "  ${CYAN}1${RESET}) 模拟 cron 执行"
-    echo -e "  ${CYAN}2${RESET}) 普通执行）"
+    echo -e "  ${CYAN}2${RESET}) 普通执行"
     read -rp "选择执行模式 [默认 1]： " exec_mode
     [[ -z "$exec_mode" ]] && exec_mode=1
 
